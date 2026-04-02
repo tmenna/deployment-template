@@ -1,1 +1,12 @@
+###Recommended workflow for a new Replit project:###
 
+- Create a new Replit workspace (blank or from a template)
+- Build your app with the agent first — get it working
+- When you're ready to deploy, run setup:
+
+   curl -s https://raw.githubusercontent.com/tmenna/deployment-template/main/scripts/deploy-setup.sh | bash
+
+- Follow the prompts (hit Enter for detected defaults)
+- Your app is live on Render
+- For every update after that:
+   bash scripts/deploy-push.sh
