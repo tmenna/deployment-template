@@ -9,4 +9,9 @@
 - Follow the prompts (hit Enter for detected defaults)
 - Your app is live on Render
 - For every update after that:
-   bash scripts/deploy-push.sh
+
+   bash scripts/deploy-push.sh "Describe what changed"
+
+Key point: Build first, then deploy. 
+The setup script is a one-time step at the end of your first working session, not something you run before building. 
+After that, deploy-push.sh is all you need for any future changes.
