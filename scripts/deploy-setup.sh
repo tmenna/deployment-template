@@ -4,9 +4,9 @@
 # First-time Replit → GitHub → Render setup script
 #
 # Pull into any Replit project and run:
-#   curl -s https://raw.githubusercontent.com/tmenna/REPO/main/scripts/deploy-setup.sh | bash
+#   curl -s https://raw.githubusercontent.com/tmenna/deployment-template/main/deploy-setup.sh | bash
 # Or if already cloned:
-#   bash scripts/deploy-setup.sh
+#   bash deploy-setup.sh
 # =============================================================================
 
 set -e
@@ -60,11 +60,52 @@ else
   APP_TYPE="static"
 fi
 
-read -p "  pnpm workspace package name (e.g. holtek-solutions): " PKG_NAME
-while [ -z "$PKG_NAME" ]; do
-  echo "  Package name cannot be empty."
+# --- Auto-detect artifact packages from artifacts/*/package.json ---
+echo ""
+ARTIFACT_PKGS=()
+if [ -d "artifacts" ]; then
+  for pkg_json in artifacts/*/package.json; do
+    [ -f "$pkg_json" ] || continue
+    pkg_name=$(grep '"name"' "$pkg_json" | head -1 | sed 's/.*"name"[[:space:]]*:[[:space:]]*"@workspace\///' | sed 's/".*//')
+    [ -n "$pkg_name" ] && ARTIFACT_PKGS+=("$pkg_name")
+  done
+fi
+
+if [ ${#ARTIFACT_PKGS[@]} -eq 0 ]; then
+  # No packages found — fall back to a plain prompt with no default
   read -p "  pnpm workspace package name: " PKG_NAME
-done
+  while [ -z "$PKG_NAME" ]; do
+    echo "  Package name cannot be empty."
+    read -p "  pnpm workspace package name: " PKG_NAME
+  done
+else
+  DEFAULT_PKG="${ARTIFACT_PKGS[0]}"
+  echo "  Detected workspace artifact packages:"
+  for i in "${!ARTIFACT_PKGS[@]}"; do
+    idx=$((i + 1))
+    if [ "$i" -eq 0 ]; then
+      echo "    ${idx}) ${ARTIFACT_PKGS[$i]}  (default)"
+    else
+      echo "    ${idx}) ${ARTIFACT_PKGS[$i]}"
+    fi
+  done
+  echo ""
+  read -p "  pnpm workspace package name [${DEFAULT_PKG}]: " PKG_INPUT
+  PKG_INPUT=${PKG_INPUT:-$DEFAULT_PKG}
+
+  # Allow selecting by number
+  if [[ "$PKG_INPUT" =~ ^[0-9]+$ ]]; then
+    idx=$((PKG_INPUT - 1))
+    if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#ARTIFACT_PKGS[@]}" ]; then
+      PKG_NAME="${ARTIFACT_PKGS[$idx]}"
+    else
+      echo "  Invalid selection, using default: ${DEFAULT_PKG}"
+      PKG_NAME="$DEFAULT_PKG"
+    fi
+  else
+    PKG_NAME="$PKG_INPUT"
+  fi
+fi
 
 if [ "$APP_TYPE" = "static" ]; then
   read -p "  Build output path relative to project root [artifacts/${PKG_NAME}/dist/public]: " PUBLISH_PATH
