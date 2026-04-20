@@ -4,9 +4,9 @@
 # First-time Replit → GitHub → Render setup script
 #
 # Pull into any Replit project and run:
-#   curl -s https://raw.githubusercontent.com/tmenna/deployment-template/main/deploy-setup.sh | bash
+#   curl -s https://raw.githubusercontent.com/tmenna/deployment-template/main/scripts/deploy-setup.sh | bash
 # Or if already cloned:
-#   bash deploy-setup.sh
+#   bash scripts/deploy-setup.sh
 # =============================================================================
 
 set -e
@@ -20,7 +20,8 @@ RESET="\033[0m"
 header() { echo -e "\n${CYAN}${BOLD}=== $1 ===${RESET}\n"; }
 step()   { echo -e "${GREEN}▶ $1${RESET}"; }
 note()   { echo -e "${YELLOW}⚠ $1${RESET}"; }
-pause()  { echo -e "\n${BOLD}$1${RESET}"; read -p "  Press ENTER when done..."; }
+# Always read pause input from the terminal, not stdin (safe for curl | bash)
+pause()  { echo -e "\n${BOLD}$1${RESET}"; read -r _PAUSE < /dev/tty; }
 
 clear
 echo -e "${BOLD}"
@@ -36,23 +37,29 @@ header "Configuration"
 echo "Answer the prompts below. Press ENTER to accept the default in [brackets]."
 echo ""
 
-read -p "  GitHub username [tmenna]: " GITHUB_USER
+# All read calls use /dev/tty so they work when run via: curl ... | bash
+printf "  GitHub username [tmenna]: "
+read -r GITHUB_USER < /dev/tty
 GITHUB_USER=${GITHUB_USER:-tmenna}
 
-read -p "  Repository name (must match your GitHub repo): " REPO_NAME
+printf "  Repository name (must match your GitHub repo): "
+read -r REPO_NAME < /dev/tty
 while [ -z "$REPO_NAME" ]; do
   echo "  Repository name cannot be empty."
-  read -p "  Repository name: " REPO_NAME
+  printf "  Repository name: "
+  read -r REPO_NAME < /dev/tty
 done
 
-read -p "  App display name for Render [${REPO_NAME}]: " APP_NAME
+printf "  App display name for Render [${REPO_NAME}]: "
+read -r APP_NAME < /dev/tty
 APP_NAME=${APP_NAME:-$REPO_NAME}
 
 echo ""
 echo "  App type:"
 echo "    1) static  — React/Vite, no server (free, no sleep)"
 echo "    2) node    — Express/Node.js server"
-read -p "  Choose [1]: " APP_TYPE_INPUT
+printf "  Choose [1]: "
+read -r APP_TYPE_INPUT < /dev/tty
 APP_TYPE_INPUT=${APP_TYPE_INPUT:-1}
 if [ "$APP_TYPE_INPUT" = "2" ] || [ "$APP_TYPE_INPUT" = "node" ]; then
   APP_TYPE="node"
@@ -61,22 +68,29 @@ else
 fi
 
 # --- Auto-detect artifact packages from artifacts/*/package.json ---
+# Excludes mockup-sandbox (never deployable) and api-server for static apps
 echo ""
 ARTIFACT_PKGS=()
 if [ -d "artifacts" ]; then
   for pkg_json in artifacts/*/package.json; do
     [ -f "$pkg_json" ] || continue
     pkg_name=$(grep '"name"' "$pkg_json" | head -1 | sed 's/.*"name"[[:space:]]*:[[:space:]]*"@workspace\///' | sed 's/".*//')
-    [ -n "$pkg_name" ] && ARTIFACT_PKGS+=("$pkg_name")
+    [ -z "$pkg_name" ] && continue
+    # Always exclude mockup-sandbox
+    [ "$pkg_name" = "mockup-sandbox" ] && continue
+    # Exclude api-server for static apps (it's a backend, not a frontend)
+    [ "$APP_TYPE" = "static" ] && [ "$pkg_name" = "api-server" ] && continue
+    ARTIFACT_PKGS+=("$pkg_name")
   done
 fi
 
 if [ ${#ARTIFACT_PKGS[@]} -eq 0 ]; then
-  # No packages found — fall back to a plain prompt with no default
-  read -p "  pnpm workspace package name: " PKG_NAME
+  printf "  pnpm workspace package name: "
+  read -r PKG_NAME < /dev/tty
   while [ -z "$PKG_NAME" ]; do
     echo "  Package name cannot be empty."
-    read -p "  pnpm workspace package name: " PKG_NAME
+    printf "  pnpm workspace package name: "
+    read -r PKG_NAME < /dev/tty
   done
 else
   DEFAULT_PKG="${ARTIFACT_PKGS[0]}"
@@ -90,7 +104,8 @@ else
     fi
   done
   echo ""
-  read -p "  pnpm workspace package name [${DEFAULT_PKG}]: " PKG_INPUT
+  printf "  pnpm workspace package name [${DEFAULT_PKG}]: "
+  read -r PKG_INPUT < /dev/tty
   PKG_INPUT=${PKG_INPUT:-$DEFAULT_PKG}
 
   # Allow selecting by number
@@ -108,7 +123,8 @@ else
 fi
 
 if [ "$APP_TYPE" = "static" ]; then
-  read -p "  Build output path relative to project root [artifacts/${PKG_NAME}/dist/public]: " PUBLISH_PATH
+  printf "  Build output path relative to project root [artifacts/${PKG_NAME}/dist/public]: "
+  read -r PUBLISH_PATH < /dev/tty
   PUBLISH_PATH=${PUBLISH_PATH:-artifacts/${PKG_NAME}/dist/public}
 fi
 
@@ -121,7 +137,8 @@ echo "    App type    : $APP_TYPE"
 echo "    Package     : $PKG_NAME"
 [ "$APP_TYPE" = "static" ] && echo "    Publish path: $PUBLISH_PATH"
 echo ""
-read -p "Looks good? Press ENTER to continue (or Ctrl+C to abort)..."
+printf "Looks good? Press ENTER to continue (or Ctrl+C to abort)... "
+read -r _CONFIRM < /dev/tty
 
 # =============================================================================
 # STEP 2 — SSH key
@@ -154,7 +171,7 @@ echo "────────────────────────�
 cat ~/.ssh/id_ed25519.pub
 echo "────────────────────────────────────────────────"
 
-pause "ACTION: Go to https://github.com/settings/ssh/new and paste the key above"
+pause "ACTION: Go to https://github.com/settings/ssh/new and paste the key above. Press ENTER when done..."
 
 # =============================================================================
 # STEP 3 — Test SSH
@@ -169,7 +186,7 @@ if echo "$SSH_RESULT" | grep -q "successfully authenticated"; then
 else
   note "SSH connection failed. Make sure you added the key to GitHub before continuing."
   echo "  Result: $SSH_RESULT"
-  pause "Try adding the key again, then press ENTER to retry"
+  pause "Try adding the key again, then press ENTER to retry..."
   ssh -T git@github.com 2>&1 || true
 fi
 
@@ -273,7 +290,7 @@ echo "  Name : ${REPO_NAME}"
 echo "  Set  : Private"
 echo "  Note : Do NOT initialize with README"
 echo ""
-pause "ACTION: Create the repo on GitHub, then press ENTER"
+pause "ACTION: Create the repo on GitHub, then press ENTER..."
 
 # =============================================================================
 # STEP 8 — Push
